@@ -41,15 +41,12 @@ This app fetches customers and items from an API (e.g., ERPNext backend), allows
 └── .gitignore # Files ignored by Git
 ```
 
-```
-
----
 
 ## 🛠️ Installation & Setup
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/your-username/infinitrix-order-booking.git
+git clone https://github.com/ehsanjavaid/Infintrix-Order-Booking-App.git
 cd infinitrix-order-booking
 ```
 2. Install Dependencies
