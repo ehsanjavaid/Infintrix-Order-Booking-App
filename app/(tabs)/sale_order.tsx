@@ -6,18 +6,83 @@ import { Button, Card, Dialog, Paragraph, Portal, Text, TextInput } from "react-
 export default function SalesOrderScreen() {
     const [customer, setCustomer] = useState("");
     const [item, setItem] = useState("");
-    const [qty, setQty] = useState("");
+    const [quantity, setQuantity] = useState("");
     const [rate, setRate] = useState("");
     const [dialogVisible, setDialogVisible] = useState(false);
     const [dialogMessage, setDialogMessage] = useState("");
 
+    const ERP_URL = "http://10.0.2.2:8000/api/resource";
+    const ERP_HEADERS = {
+        "Content-Type": "application/json",
+        Authorization: "token d59aee6dda93b1d:9a4cc3ac4498ca2", // replace with your token
+    };
+
+    // 🔹 Ensure Customer exists (auto-create if not)
+    const ensureCustomerExists = async (customerName: string) => {
+        try {
+            const existing = await axios.get(
+                `${ERP_URL}/Customer?filters=[["customer_name","=","${customerName}"]]`,
+                { headers: ERP_HEADERS }
+            );
+
+            if (existing.data.data.length > 0) {
+                return existing.data.data[0].name; // existing customer_id
+            }
+
+            const newCustomer = await axios.post(
+                `${ERP_URL}/Customer`,
+                {
+                    customer_name: customerName,
+                    customer_group: "All Customer Groups",
+                    territory: "All Territories",
+                },
+                { headers: ERP_HEADERS }
+            );
+
+            return newCustomer.data.data.name;
+        } catch (err: any) {
+            throw new Error(`Customer check/create failed: ${JSON.stringify(err.response?.data || err.message)}`);
+        }
+    };
+
+    // 🔹 Ensure Item exists (auto-create if not)
+    const ensureItemExists = async (itemCode: string, rateNum: number) => {
+        try {
+            const existing = await axios.get(
+                `${ERP_URL}/Item?filters=[["item_code","=","${itemCode}"]]`,
+                { headers: ERP_HEADERS }
+            );
+
+            if (existing.data.data.length > 0) {
+                return existing.data.data[0].name; // existing item_code
+            }
+
+            const newItem = await axios.post(
+                `${ERP_URL}/Item`,
+                {
+                    item_code: itemCode,
+                    item_name: itemCode,
+                    item_group: "All Item Groups",
+                    stock_uom: "Nos",
+                    standard_rate: rateNum,
+                },
+                { headers: ERP_HEADERS }
+            );
+
+            return newItem.data.data.name;
+        } catch (err: any) {
+            throw new Error(`Item check/create failed: ${JSON.stringify(err.response?.data || err.message)}`);
+        }
+    };
+
+    // 🔹 Handle Sales Order Submission
     const handleSubmit = async () => {
-        if (!customer || !item || !qty || !rate) {
+        if (!customer || !item || !quantity || !rate) {
             alert("Please fill in all fields.");
             return;
         }
 
-        const qtyNum = parseFloat(qty);
+        const qtyNum = parseFloat(quantity);
         const rateNum = parseFloat(rate);
 
         if (isNaN(qtyNum) || isNaN(rateNum)) {
@@ -26,69 +91,46 @@ export default function SalesOrderScreen() {
         }
 
         try {
-            // 1️⃣ Create Sales Order (Draft)
-            const createResponse = await axios.post(
-                "http://10.0.2.2:8000/api/resource/Sales Orders",
+            // Step 1: Ensure customer exists
+            const customerId = await ensureCustomerExists(customer);
+
+            // Step 2: Ensure item exists
+            const itemId = await ensureItemExists(item, rateNum);
+
+            // Step 3: Create Sales Order
+            const response = await axios.post(
+                `${ERP_URL}/Sales Order`,
                 {
-                    customer: customer,
+                    customer: customerId,
                     transaction_date: new Date().toISOString().split("T")[0],
                     delivery_date: new Date().toISOString().split("T")[0],
                     items: [
                         {
-                            item_code: item,
+                            item_code: itemId,
                             qty: qtyNum,
                             rate: rateNum,
                         },
                     ],
-                    docstatus: 1
                 },
-                {
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: "token f9282e31b78ebd0:c1aa94e0bdc9f0a",
-                    },
-                }
+                { headers: ERP_HEADERS }
             );
 
-            // const docname = createResponse.data.data.name;
-            // console.log("Draft Created:", docname);
-
-            // // 2️⃣ Submit the Sales Order
-            // const submitResponse = await axios.post(
-            //     `http://10.0.2.2:8000/api/method/frappe.client.submit`,
-            //     {
-            //         doc: JSON.stringify({
-            //             doctype: "Sales Orders",
-            //             name: docname
-            //         })
-            //     },
-            //     {
-            //         headers: {
-            //             "Content-Type": "application/json",
-            //             Authorization: "token f9282e31b78ebd0:c1aa94e0bdc9f0a",
-            //         },
-            //     }
-            // );
-
-            console.log("✅ Sales Order Submitted:", createResponse.data);
-            setDialogMessage("✅ Order submitted successfully!");
+            setDialogMessage("✅ Sales Order submitted successfully!");
             setDialogVisible(true);
 
-            // Reset form
+            // reset form
             setCustomer("");
             setItem("");
-            setQty("");
+            setQuantity("");
             setRate("");
-        } catch (error: any) {
-            console.error("❌ Error:", error.response?.data || error.message);
-            setDialogMessage(
-                `❌ Failed to submit order:\n${JSON.stringify(error.response?.data || error.message)}`
-            );
+        } catch (err: any) {
+            setDialogMessage(`❌ Failed:\n${JSON.stringify(err.response?.data || err.message)}`);
             setDialogVisible(true);
+            console.error(err);
         }
     };
 
-    const total = qty && rate ? (parseFloat(qty) * parseFloat(rate)).toString() : "0";
+    const total = quantity && rate ? (parseFloat(quantity) * parseFloat(rate)).toString() : "0";
 
     return (
         <ScrollView contentContainerStyle={styles.container}>
@@ -106,7 +148,7 @@ export default function SalesOrderScreen() {
                         mode="outlined"
                     />
                     <TextInput
-                        label="Item"
+                        label="Item Code"
                         value={item}
                         onChangeText={setItem}
                         style={styles.input}
@@ -114,8 +156,8 @@ export default function SalesOrderScreen() {
                     />
                     <TextInput
                         label="Quantity"
-                        value={qty}
-                        onChangeText={setQty}
+                        value={quantity}
+                        onChangeText={setQuantity}
                         keyboardType="numeric"
                         style={styles.input}
                         mode="outlined"
@@ -160,30 +202,9 @@ export default function SalesOrderScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flexGrow: 1,
-        padding: 20,
-        paddingTop: 50,
-        backgroundColor: "#f8f9fa",
-    },
-    title: {
-        textAlign: "center",
-        marginBottom: 20,
-        fontWeight: "bold",
-        color: "#222",
-    },
-    card: {
-        borderRadius: 12,
-        elevation: 3,
-        backgroundColor: "#fff",
-        paddingVertical: 10,
-    },
-    input: {
-        marginBottom: 15,
-    },
-    button: {
-        borderRadius: 8,
-        backgroundColor: "#007AFF",
-        elevation: 2,
-    },
+    container: { flexGrow: 1, padding: 20, paddingTop: 50, backgroundColor: "#f8f9fa" },
+    title: { textAlign: "center", marginBottom: 20, fontWeight: "bold", color: "#222" },
+    card: { borderRadius: 12, elevation: 3, backgroundColor: "#fff", paddingVertical: 10 },
+    input: { marginBottom: 15 },
+    button: { borderRadius: 8, backgroundColor: "#007AFF", elevation: 2 },
 });
